@@ -36,6 +36,7 @@ ANIM_GRAPH_PERSISTENCE = 0.1  # seconds
 ANIM_ACT_EDGE_COLOR = 'forestgreen'
 ANIM_ACT_NODE_COLOR = 'yellow'
 ANIM_FPS = 60
+ANIM_FRAME_PADDING = 10
 ANIM_FRAME_PATH = os.path.join(os.path.dirname(__file__), 'frames')
 
 
@@ -94,7 +95,8 @@ body_reject_re = re.compile(r'^\(SORRY ')
 sender_re = re.compile(r':sender ([^ )]+)', re.IGNORECASE)
 receiver_re = re.compile(r':receiver ([^ )]+)', re.IGNORECASE)
 ts_re = re.compile(r'(\d\d):(\d\d):(\d\d(?:\.\d*))')
-speech_re = re.compile(r':RECEIVER KEYBOARD.*:TEXT "([^<]+)"')
+user_speech_re = re.compile(r':RECEIVER KEYBOARD.*:TEXT "([^<]+)"')
+computer_speech_re = re.compile(r'TELL :CONTENT \(SPOKEN :WHAT "([^"]+)"\)')
 
 agent_blacklist = [ 'CHANNELKB', 'DUMMY', 'SPEECH-OUT', 'GRAPHVIZ', 'KEYBOARD',
                     'CONCEPTUALIZER', 'INIT', 'FACILITATOR']
@@ -138,9 +140,17 @@ for line in f:
     total_sec = ((int(ts_hour) * 24) + int(ts_min)) * 60 + float(ts_sec)
     t = datetime.timedelta(0, total_sec)
 
-    if other == 'KEYBOARD' and speech_re.search(body):
-        speeches.append(Speech(speech_re.findall(body)[0], t.total_seconds()))
-        continue
+    if other == 'KEYBOARD':
+        text = None
+        if user_speech_re.search(body):
+            text = 'User: ' + user_speech_re.findall(body)[0]
+        elif computer_speech_re.search(body):
+            text = 'Computer: ' + computer_speech_re.findall(body)[0]
+        if text is not None:
+            # Rudimentary HTML tag stripping.
+            text = re.sub(r'</?\w+>', '', text)
+            speeches.append(Speech(text, t.total_seconds()))
+            continue
 
     s_match = re.search(sender_re, body)
     r_match = re.search(receiver_re, body)
@@ -194,7 +204,7 @@ g.layout(prog='dot')
 
 
 anim_seconds = (tfinal - t0).total_seconds() * ANIM_T_SCALE
-num_frames = int(np.ceil(anim_seconds * ANIM_FPS))
+num_frames = int(np.ceil(anim_seconds * ANIM_FPS)) + ANIM_FRAME_PADDING
 
 base_frame = pyagg.Canvas(TL_W, TL_H, background='white')
 base_frame.default_unit = 'px'
