@@ -242,8 +242,8 @@ for worker_num in range(num_workers):
         worker_pids[pid] = worker_num
     else:
         # Worker will proceed from here with worker_num set appropriately.
-        signal.signal(signal.SIGINT, signal.SIG_DFL)
         process_type = 'worker'
+        signal.signal(signal.SIGINT, signal.default_int_handler)
         break
 else:
     process_type = 'master'
@@ -251,52 +251,58 @@ else:
 
 if process_type == 'worker':
 
-    ANIM_GRAPH_TMP_FILE = tempfile.NamedTemporaryFile(suffix='.png')
+    TEMP_FILE = tempfile.NamedTemporaryFile(suffix='.png')
 
-    # Split work equally between workers.
-    for f in xrange(worker_num, num_frames, num_workers):
+    try:
 
-        print "%d: %d/%d" % (worker_num, f, num_frames)
-        sys.stdout.flush()
+        # Split work equally between workers.
+        for f in xrange(worker_num, num_frames, num_workers):
 
-        t_rel = f / ANIM_FPS / ANIM_T_SCALE
-        t_abs = t_rel + t0.total_seconds()
+            print "%d: %d/%d" % (worker_num, f, num_frames)
+            sys.stdout.flush()
 
-        # Draw graph.
-        g2 = g.copy()
-        g2.has_layout = True
-        for m in messages:
-            if m.t <= t_abs <= m.t + ANIM_GRAPH_PERSISTENCE / ANIM_T_SCALE:
-                g2.get_edge(m.src, m.dst).attr['color'] = ANIM_ACT_EDGE_COLOR
-                for n in m.src, m.dst:
-                    node = g2.get_node(n)
-                    node.attr['style'] = 'filled'
-                    node.attr['fillcolor'] = ANIM_ACT_NODE_COLOR
+            t_rel = f / ANIM_FPS / ANIM_T_SCALE
+            t_abs = t_rel + t0.total_seconds()
 
-        g2.draw(ANIM_GRAPH_TMP_FILE.name)
-        graph_frame = pyagg.load(ANIM_GRAPH_TMP_FILE.name)
-        graph_frame.crop(0, 0, graph_frame.width-1, graph_frame.height-1)
+            # Draw graph.
+            g2 = g.copy()
+            g2.has_layout = True
+            for m in messages:
+                if m.t <= t_abs <= m.t + ANIM_GRAPH_PERSISTENCE / ANIM_T_SCALE:
+                    edge = g2.get_edge(m.src, m.dst)
+                    edge.attr['color'] = ANIM_ACT_EDGE_COLOR
+                    for n in m.src, m.dst:
+                        node = g2.get_node(n)
+                        node.attr['style'] = 'filled'
+                        node.attr['fillcolor'] = ANIM_ACT_NODE_COLOR
 
-        # Draw timeline.
-        tl_frame = base_frame.copy()
-        x = t_rel * TL_X_SCALE + TL_GUTTER_W
-        margin = ytick_spacing()
-        y1 = margin
-        y2 = TL_H - margin
-        tl_frame.draw_line([x,y1, x,y2], fillcolor='black', fillsize=3)
-        tl_frame.drawer.flush()
+            g2.draw(TEMP_FILE.name)
+            graph_frame = pyagg.load(TEMP_FILE.name)
+            graph_frame.crop(0, 0, graph_frame.width-1, graph_frame.height-1)
 
-        frame = pyagg.Canvas(ANIM_W, ANIM_H, background='white')
-        frame.paste(graph_frame, (ANIM_GRAPH_X, ANIM_GRAPH_Y))
-        frame.paste(tl_frame, (ANIM_TL_X, ANIM_TL_Y))
+            # Draw timeline.
+            tl_frame = base_frame.copy()
+            x = t_rel * TL_X_SCALE + TL_GUTTER_W
+            margin = ytick_spacing()
+            y1 = margin
+            y2 = TL_H - margin
+            tl_frame.draw_line([x,y1, x,y2], fillcolor='black', fillsize=3)
+            tl_frame.drawer.flush()
 
-        for s in reversed(speeches):
-            if s.t <= t_abs:
-                frame.draw_text(s.msg, (ANIM_W / 2, 10), anchor='n',
-                                font=FONT, textsize=6)
-                break
+            frame = pyagg.Canvas(ANIM_W, ANIM_H, background='white')
+            frame.paste(graph_frame, (ANIM_GRAPH_X, ANIM_GRAPH_Y))
+            frame.paste(tl_frame, (ANIM_TL_X, ANIM_TL_Y))
 
-        frame.save(os.path.join(ANIM_FRAME_PATH, '%05d.png' % f))
+            for s in reversed(speeches):
+                if s.t <= t_abs:
+                    frame.draw_text(s.msg, (ANIM_W / 2, 10), anchor='n',
+                                    font=FONT, textsize=6)
+                    break
+
+            frame.save(os.path.join(ANIM_FRAME_PATH, '%05d.png' % f))
+
+    except KeyboardInterrupt:
+        pass
 
     # Workers just exist after they finish their work.
     sys.exit()
@@ -305,7 +311,7 @@ else:
 
     # Master waits for workers then restores SIGINT handler.
     cleanup_workers()
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
+    signal.signal(signal.SIGINT, signal.default_int_handler)
 
 print
 
